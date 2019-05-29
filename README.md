@@ -1,6 +1,156 @@
 # EM-HMM
 Implemented EM to train an HMM. Used the first 900 observations as a single training sequence, and the last 100 as a single development sequence. 
 
+## Main codes:
+
+### Forward
+```python
+
+def forward(model, data, args):
+    from scipy.stats import multivariate_normal
+    from math import log
+    alphas = np.zeros((len(data),args.cluster_num))
+    log_likelihood = 0.0
+    #TODO: Calculate and return forward probabilities (normalized at each timestep; see next line) and log_likelihood
+    #NOTE: To avoid numerical problems, calculate the sum of alpha[t] at each step, normalize alpha[t] by that value, and increment log_likelihood by the log of the value you normalized by. This will prevent the probabilities from going to 0, and the scaling will be cancelled out in train_model when you normalize (you don't need to do anything different than what's in the notes). This was discussed in class on April 3rd.
+    # raise NotImplementedError
+    initials, transitions, mus, sigmas = extract_parameters(model)
+    K = args.cluster_num
+    N = len(data)
+    sum_of_alphas = np.zeros(N)
+    emissions = np.zeros((N, K))
+
+    for t in range(N):
+        for k in range(K):
+            # distinguished args tied
+            if not args.tied:
+                emissions[t, k] = multivariate_normal.pdf(data[t], mus[k], sigmas[k])
+            else:
+                emissions[t, k] = multivariate_normal.pdf(data[t], mus[k], sigmas)
+
+    for t in range(N):
+        # the first element when t == 0
+        if t == 0:  # alphas[0, k]
+            for i in range(K):
+                alphas[t, i] = initials[i] * emissions[0, i]
+        else:
+            for i in range(K):
+                for j in range(K):
+                    alphas[t, i] += alphas[t-1, j] * transitions[j, i]
+                # alphas[n] = alphas[n-1] * transitions * emissions[n].T
+                alphas[t, i] *= emissions[t, i]
+        sum_of_alphas[t] = sum(alphas[t, :])
+        alphas[t, :] /= sum_of_alphas[t]
+        log_likelihood += log(sum_of_alphas[t])
+    return alphas, log_likelihood
+
+```
+### Backward
+
+```python
+def backward(model, data, args):
+    from scipy.stats import multivariate_normal
+    betas = np.zeros((len(data),args.cluster_num))
+    #TODO: Calculate and return backward probabilities (normalized like in forward before)
+    initials, transitions, mus, sigmas = extract_parameters(model)
+    N = len(data)
+    K = args.cluster_num
+    emissions = np.zeros((N, K))
+
+    for n in range(N):
+        for k in range(K):
+            # distinguished args tied
+            if not args.tied:   
+                emissions[n, k] = multivariate_normal.pdf(data[n], mus[k], sigmas[k])
+            else:
+                emissions[n, k] = multivariate_normal.pdf(data[n], mus[k], sigmas)
+
+    for t in range(N-1, -1, -1):
+        # the first element when t == N-1
+        if t == N-1:    # alphas[N-1, k]
+            for i in range(K):
+                betas[t, i] = 1
+        else:
+            for i in range(K):
+                for j in range(K):
+                    betas[t, i] += betas[t+1, j] * transitions[i, j] * emissions[t+1, j]
+        betas[t, :] /= np.sum(betas[t, :])
+
+    # raise NotImplementedError
+    return betas
+```
+
+### Training
+```python
+while current_iter < args.iterations:
+        alphas, _ = forward(model, train_xs, args)
+        betas = backward(model, train_xs, args)
+        """ E step """
+        for t in range(N):
+            for i in range(K):
+                gammas[t, i] = alphas[t, i] * betas[t, i]
+            gammas[t, :] /= sum(gammas[t, :])
+
+        for n in range(N):
+            for k in range(K):
+                if not args.tied:
+                    emissions[n, k] = multivariate_normal.pdf(train_xs[n], mus[k], sigmas[k])
+                else:
+                    emissions[n, k] = multivariate_normal.pdf(train_xs[n], mus[k], sigmas)
+
+        for t in range(1, N):
+            for i in range(K):
+                for j in range(K):
+                    xi[t, i, j] = np.dot(alphas[t-1, i], betas[t, j].T) * transitions[i, j] * emissions[t, j]
+            xi[t, :, :] /= np.sum(xi[t, :, :])
+        """ M step: calculate the new mus and sigmas for each gaussian by applying above xi """
+        sum_of_gammas = np.sum(gammas, axis=0)
+        for k in range(K):
+            initials[k] = gammas[0, k]
+            for j in range(K):
+                # update Transision matrix
+                transitions[k, j] = np.sum(xi[:, k, j]) / np.sum(gammas[:, k])
+
+            weight_sum = 0
+            for n in range(N):
+                weight_sum += (gammas[n, k] * train_xs[n])
+            # update mus
+            mus[k] = weight_sum / sum_of_gammas[k]
+
+        # update sigmas different with arg tied
+        if not args.tied:
+            for k in range(K):
+                weighted_sum = np.zeros((2, 2))
+                for n in range(N):
+                    weighted_sum += (gammas[n, k] * np.outer(train_xs[n]-mus[k], train_xs[n]-mus[k]))
+                sigmas[k] = weighted_sum / sum_of_gammas[k]
+        else:
+            sigmas = np.zeros(sigmas.shape)
+            for k in range(K):
+                for n in range(N):
+                    sigmas += (gammas[n, k] * np. outer(train_xs[n]-mus[k], train_xs[n]-mus[k]))
+            sigmas[:] = sigmas / N
+
+        ## likelihood computation for plotting
+        current_model = [initials, transitions, mus, sigmas]
+        # current_log_likelihood = np.sum(np.log(np.sum(P_Z_given_X, axis = 1)))
+        current_log_likelihood = average_log_likelihood(current_model, train_xs, args)
+        log_likelihoods.append(current_log_likelihood)
+
+        current_iter += 1
+
+        if not args.nodev:
+            ll_dev = average_log_likelihood(current_model, dev_xs, args)
+            print("iter %s dev log_likelihood: %s" % (str(current_iter), str(ll_dev)))
+            if ll_dev > best_ll:
+                best_ll = ll_dev
+                best_model = current_model
+                best_iter = current_iter
+        print("iter %s train log_likelihood: %s" % (str(current_iter), str(current_log_likelihood)))
+
+
+```
+
 
 ## 1.What I did?
     1.1 Implemented the model initilization
@@ -28,22 +178,22 @@ Tied: (2,2) all used the same tied covariance
 Full: (args.cluster_num,2,2) k different covariance
 
 I tried tied and full on the data and get quiet different results. Full cov are much better than the tied that the tied's corresponding ll even decrease with the iteration increases. Because there are two different gaussian model for each cluster. They don't need to be with total same cov. So the full cov will better help to train the data.
-    [Tied:]
-      best iterations: 10
-      Train LL: -4.3973604221966
-      Dev LL: -4.419237979207335
-      Initials: 1.0 | 0.0 | 0.0
-      Transitions: 0.06796666462417814 0.2543992331495606 0.679048679952909 | 0.40907535622740343 0.028675091741660188 0.5585417930546622 | 0.12913809025272815 0.7319158563699996 0.13855216256616776
-      Mus: -4.490292072296143 -0.7727795839309692 | 0.7569531798362732 -3.2173733711242676 | -0.03431331738829613 1.7204155921936035
-      Sigma: 3.4570930491496688 0.3648431369193479 0.3648431369193479 1.6972277344249995
-    [Full]
-      best iterations: 9
-      Train LL: -3.998961889620625
-      Dev LL: -4.044441410167979
-      Initials: 1.9360876256934118e-76 | 1.0 | 0.0
-      Transitions: 0.033332541729351725 0.5445371205691123 0.4195922665858741 | 0.41632807990405685 4.523187483273485e-27 0.5836719200959151 | 0.9999958933011637 1.5192606444174447e-06 9.392860242604773e-24
-      Mus: 0.18539197742938995 -2.794691324234009 | -3.90271258354187 0.024534499272704124 | 0.07384778559207916 1.9276814460754395
-      Sigmas: 7.122908590414413 -0.14455999054449772 -0.14455999054449772 3.249535768019475 | 5.5543410967785345 2.3743385564636106 2.3743385564636106 1.2014391507318603 | 1.0765094010074774 0.11424378486511712 0.11424378486511712 1.0633718099301348
+	    [Tied:]
+	      best iterations: 10
+	      Train LL: -4.3973604221966
+	      Dev LL: -4.419237979207335
+	      Initials: 1.0 | 0.0 | 0.0
+	      Transitions: 0.06796666462417814 0.2543992331495606 0.679048679952909 | 0.40907535622740343 0.028675091741660188 0.5585417930546622 | 0.12913809025272815 0.7319158563699996 0.13855216256616776
+	      Mus: -4.490292072296143 -0.7727795839309692 | 0.7569531798362732 -3.2173733711242676 | -0.03431331738829613 1.7204155921936035
+	      Sigma: 3.4570930491496688 0.3648431369193479 0.3648431369193479 1.6972277344249995
+	    [Full]
+	      best iterations: 9
+	      Train LL: -3.998961889620625
+	      Dev LL: -4.044441410167979
+	      Initials: 1.9360876256934118e-76 | 1.0 | 0.0
+	      Transitions: 0.033332541729351725 0.5445371205691123 0.4195922665858741 | 0.41632807990405685 4.523187483273485e-27 0.5836719200959151 | 0.9999958933011637 1.5192606444174447e-06 9.392860242604773e-24
+	      Mus: 0.18539197742938995 -2.794691324234009 | -3.90271258354187 0.024534499272704124 | 0.07384778559207916 1.9276814460754395
+	      Sigmas: 7.122908590414413 -0.14455999054449772 -0.14455999054449772 3.249535768019475 | 5.5543410967785345 2.3743385564636106 2.3743385564636106 1.2014391507318603 | 1.0765094010074774 0.11424378486511712 0.11424378486511712 1.0633718099301348
 
 
 ## 5.Logic for dev data

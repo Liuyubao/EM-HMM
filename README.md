@@ -165,14 +165,22 @@ while current_iter < args.iterations:
 
 ## 2.Compared with original non-sequence
 
+<img src="plots/Data_visualization/Figure_K5_iterations30.png" width="800">
+
 Better. The best log likelihood of HMM could reach -3.7. While the non-sequence only -4.31
 
 ## 3.Best num of states (datas shown below)
+
+<img src="plots/Different_K_with_iterations_30/Figure_K_3.png" width="500">
+<img src="plots/Different_iterations/Figure_K2_iteration50.png" width="500">
 
     From the log likelihood running on dev data, the best K is 5 and the I is 22.
     Average log likelihood when K = 5: Train LL: -3.7228302479806064	Dev LL: -3.709709886498374
 
 ## 4.Tied and full covariance
+
+<img src="plots/Tied_and_Full/Figure_Full_k2_iteration100.png" width="500">
+<img src="plots/Tied_and_Full/Figure_Tied_k2_iteration50.png" width="500">
 
 Tied: (2,2) all used the same tied covariance
 Full: (args.cluster_num,2,2) k different covariance

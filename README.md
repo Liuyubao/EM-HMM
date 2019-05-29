@@ -177,7 +177,7 @@ Better. The best log likelihood of HMM could reach -3.7. While the non-sequence 
 Tied: (2,2) all used the same tied covariance
 Full: (args.cluster_num,2,2) k different covariance
 
-I tried tied and full on the data and get quiet different results. Full cov are much better than the tied that the tied's corresponding ll even decrease with the iteration increases. Because there are two different gaussian model for each cluster. They don't need to be with total same cov. So the full cov will better help to train the data.
+	I tried tied and full on the data and get quiet different results. Full cov are much better than the tied that the tied's corresponding ll even decrease with the iteration increases. Because there are two different gaussian model for each cluster. They don't need to be with total same cov. So the full cov will better help to train the data.
 	    [Tied:]
 	      best iterations: 10
 	      Train LL: -4.3973604221966
@@ -201,6 +201,7 @@ I tried tied and full on the data and get quiet different results. Full cov are 
 5.1 Inside the train_model function, I only focus on the best iteration. I kept track of each iteration and compare the average likelihood finally return the best one.
 
 5.2 What's more, I also iterate K (number of clusters) and find the best hyperparameters set using different data. Here I run 30 iteration for each K and record the best ll on dev and final ll on training data. Every K run by 10 times to choose the best to avoid the influences of initialization. 
+
 	Average log likelihood when K = 2: Train LL: -4.331358290053831		Dev LL: -4.425244581508012
 	Average log likelihood when K = 3: Train LL: -3.9989623458797072	Dev LL: -4.044436700309244
 	Average log likelihood when K = 4: Train LL: -3.7292294388793743	Dev LL: -3.7099826154884337
